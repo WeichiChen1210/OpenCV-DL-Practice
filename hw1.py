@@ -1,49 +1,102 @@
 from PyQt5.QtWidgets import (QDialog, QApplication, QCheckBox, QGridLayout, QGroupBox, QMenu, QPushButton, QRadioButton, QVBoxLayout, QWidget, QLabel)
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QPixmap, QImage
 import cv2
 import numpy as np
 import sys
 
-class Picture(QDialog):
+# open a new dialog, read picture with opencv and show image with Qt
+class showPicture(QDialog):
     def __init__(self):
-        super(Picture, self).__init__()
+        super(showPicture, self).__init__()
         self.img = np.ndarray(())
         self.setWindowTitle('picture')
-        self.img = cv2.imread('./images/images/dog.bmp', -1)
-        if self.img.size == 0:
-            print('failed')
-            return
-        print(self.img.size)
-        # label = QLabel(self)
-        # pixmap = QPixmap('./images/images/dog.bmp')
-        # label.setPixmap(pixmap)
-        # self.resize(pixmap.width(), pixmap.height())
-        # print("Height: ", pixmap.height())
-        # print("Width: ", pixmap.width())
+        # dialog element setup
+        self.image_frame = QLabel()
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.image_frame)
+        self.setLayout(self.layout)
 
+        # read image with opencv
+        self.img = cv2.imread('./images/images/dog.bmp', -1)
+        height, width, bytesPerComponent = self.img.shape
+        bytesPerLine = 3 * width
+        print("Height = ", height)
+        print("Width = ", width)
+
+        # convert opencv image to Qt image and show
+        self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
+        self.image_frame.setPixmap(QPixmap.fromImage(self.img))
+
+class colorConvert(QDialog):
+    def __init__(self):
+        super(colorConvert, self).__init__()
+        self.img = np.ndarray(())
+        self.setWindowTitle('picture')
+        # dialog element setup
+        self.image_frame = QLabel()
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.image_frame)
+        self.setLayout(self.layout)
+
+        self.img = cv2.imread('./images/images/color.png', -1)
+        temp = self.img.copy()
+        # [:, :, 0] b [:, :, 1] g [:, :, 2] r
+        self.img[:, :, 0] = temp[:, :, 1].copy()
+        self.img[:, :, 1] = temp[:, :, 2].copy()
+        self.img[:, :, 2] = temp[:, :, 0].copy()
+        # read image with opencv
+        height, width, bytesPerComponent = self.img.shape
+        bytesPerLine = 3 * width
+
+        # convert opencv image to Qt image and show
+        self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
+        self.image_frame.setPixmap(QPixmap.fromImage(self.img))
+
+class imgFipping(QDialog):
+    def __init__(self):
+        super(imgFipping, self).__init__()
+        self.img = np.ndarray(())
+        self.setWindowTitle('picture')
+        # dialog element setup
+        self.image_frame = QLabel()
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.image_frame)
+        self.setLayout(self.layout)
+
+        self.img = cv2.imread('./images/images/dog.bmp', -1)
+        self.img = cv2.flip(self.img, 1)
+        # read image with opencv
+        height, width, bytesPerComponent = self.img.shape
+        bytesPerLine = 3 * width
+
+        # convert opencv image to Qt image and show
+        self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
+        self.image_frame.setPixmap(QPixmap.fromImage(self.img))
 
 class Window(QWidget):
     def __init__(self, parent=None):
         super(self.__class__, self).__init__()
 
         grid = QGridLayout()
-        grid.addWidget(self.imageProcessingGroup(), 0, 0)
-        grid.addWidget(self.adaptiveThresholdGroup(), 1, 0)
-        grid.addWidget(self.imageProcessingGroup(), 0, 1)
-        grid.addWidget(self.convolutionGroup(), 0, 2)
+        grid.addWidget(self.image_processing_group(), 0, 0)
+        grid.addWidget(self.adaptive_threshold_group(), 1, 0)
+        grid.addWidget(self.image_processing_group(), 0, 1)
+        grid.addWidget(self.convolution_group(), 0, 2)
         self.setLayout(grid)
 
         self.setFixedSize(640, 480)
         self.setWindowTitle("Image Processing")
         self.resize(400, 300)
 
-    def imageProcessingGroup(self):
+    def image_processing_group(self):
         groupBox = QGroupBox("1. Image Processing")
         push1 = QPushButton("1.1 Load Image")
-        push1.clicked.connect(self.loadImage)
+        push1.clicked.connect(self.load_image)
         push2 = QPushButton("1.2 Color Conversion")
+        push2.clicked.connect(self.convert_color)
         push3 = QPushButton("1.3 Image Flipping")
+        push3.clicked.connect(self.flip_image)
         push4 = QPushButton("1.4 Blending")
 
         vbox = QVBoxLayout()
@@ -56,7 +109,7 @@ class Window(QWidget):
 
         return groupBox
     
-    def adaptiveThresholdGroup(self):
+    def adaptive_threshold_group(self):
         groupBox = QGroupBox("2. Adaptive Threshold")
         push1 = QPushButton("2.1 Global Threshold")
         push2 = QPushButton("2.2 Local Threshold")
@@ -69,7 +122,7 @@ class Window(QWidget):
 
         return groupBox
     
-    def convolutionGroup(self):
+    def convolution_group(self):
         groupBox = QGroupBox("4. Convolution")
         push1 = QPushButton("4.1 Gaussian")
         push2 = QPushButton("4.2 Sobel X")
@@ -86,7 +139,7 @@ class Window(QWidget):
 
         return groupBox
     
-    def imageTransformationGroup(self):
+    def image_transformation_group(self):
         groupBox = QGroupBox("3. imageTransformation")
 
         push1 = QPushButton("3.1 Rotation, scaling, translation")
@@ -107,13 +160,31 @@ class Window(QWidget):
 
     
 
-    @pyqtSlot()
-    def on_click(self):
-        print("clicked")
+    @pyqtSlot()    
+    def load_image(self):
+        # img = cv2.imread('./images/images/dog.bmp', -1)
+        # cv2.imshow('picture', img)
+        self.nd = showPicture()
+        self.nd.show()
     
-    def loadImage(self):
-        self.nd = Picture()
-        
+    def convert_color(self):
+        # [:, :, 0] b [:, :, 1] g [:, :, 2] r
+        # img = cv2.imread('./images/images/color.png', -1)
+        # temp = img.copy()
+        # img[:, :, 0] = temp[:, :, 1].copy()
+        # img[:, :, 1] = temp[:, :, 2].copy()
+        # img[:, :, 2] = temp[:, :, 0].copy()
+        # cv2.imshow('picture', img)
+
+        self.nd = colorConvert()
+        self.nd.show()
+
+    def flip_image(self):
+        # img = cv2.imread('./images/images/dog.bmp', -1)
+        # img = cv2.flip(img, 1)
+        # cv2.imshow('picture', img)
+
+        self.nd = imgFipping()
         self.nd.show()
 
 if __name__ == "__main__":
