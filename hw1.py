@@ -77,9 +77,7 @@ class imgFipping(QDialog):
         self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
         self.image_frame.setPixmap(QPixmap.fromImage(self.img))
 
-# def blending(img1, img2):
-    
-    
+
 
 class Window(QWidget):
     def __init__(self, parent=None):
@@ -120,7 +118,9 @@ class Window(QWidget):
     def adaptive_threshold_group(self):
         groupBox = QGroupBox("2. Adaptive Threshold")
         push1 = QPushButton("2.1 Global Threshold")
+        push1.clicked.connect(self.global_threshold)
         push2 = QPushButton("2.2 Local Threshold")
+        push2.clicked.connect(self.local_threshold)
 
         vbox = QVBoxLayout()
         vbox.addWidget(push1)
@@ -183,7 +183,6 @@ class Window(QWidget):
         # img[:, :, 1] = temp[:, :, 2].copy()
         # img[:, :, 2] = temp[:, :, 0].copy()
         # cv2.imshow('picture', img)
-
         self.nd = colorConvert()
         self.nd.show()
 
@@ -191,7 +190,6 @@ class Window(QWidget):
         # img = cv2.imread('./images/images/dog.bmp', -1)
         # img = cv2.flip(img, 1)
         # cv2.imshow('picture', img)
-
         self.nd = imgFipping()
         self.nd.show()
     
@@ -209,8 +207,18 @@ class Window(QWidget):
             cv2.imshow('Blend', dst)
             
         cv2.destroyAllWindows()
-        # self.nd = blending()
-        # self.nd.show()
+
+    def global_threshold(self):
+        origin_img = cv2.imread('./images/images/QR.png', 0)
+        cv2.imshow('Original image', origin_img)
+        ret,thresh1 = cv2.threshold(origin_img, 80, 255, cv2.THRESH_BINARY)
+        cv2.imshow('Threshold image', thresh1)
+
+    def local_threshold(self):
+        origin_img = cv2.imread('./images/images/QR.png', 0)
+        cv2.imshow('Original image', origin_img)
+        th1 = cv2.adaptiveThreshold(origin_img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 19, -1)
+        cv2.imshow('Threshold image', th1)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
