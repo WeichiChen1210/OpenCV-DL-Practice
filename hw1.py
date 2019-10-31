@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (QDialog, QApplication, QCheckBox, QGridLayout, QGroupBox, QMenu, QPushButton, QRadioButton, QVBoxLayout, QWidget, QLabel)
+from PyQt5.QtWidgets import (QDialog, QApplication, QGridLayout, QGroupBox, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QIcon, QPixmap, QImage
 import cv2
@@ -85,18 +85,17 @@ class Window(QWidget):
 
         grid = QGridLayout()
         grid.addWidget(self.image_processing_group(), 0, 0)
-        grid.addWidget(self.adaptive_threshold_group(), 1, 0)
-        grid.addWidget(self.image_processing_group(), 0, 1)
-        grid.addWidget(self.convolution_group(), 0, 2)
+        grid.addWidget(self.adaptive_threshold_group(), 0, 1)
+        grid.addWidget(self.image_transformation_group(), 0, 2)
+        grid.addWidget(self.convolution_group(), 0, 3)
         self.setLayout(grid)
 
-        self.setFixedSize(640, 480)
+        self.setFixedSize(900, 480)
         self.setWindowTitle("Image Processing")
-        self.resize(400, 300)
 
     def image_processing_group(self):
         groupBox = QGroupBox("1. Image Processing")
-        push1 = QPushButton("1.1 Load Image")
+        push1 = QPushButton("1.1 Load Image", self)
         push1.clicked.connect(self.load_image)
         push2 = QPushButton("1.2 Color Conversion")
         push2.clicked.connect(self.convert_color)
@@ -106,10 +105,10 @@ class Window(QWidget):
         push4.clicked.connect(self.blend_image)
 
         vbox = QVBoxLayout()
-        vbox.addWidget(push1)
-        vbox.addWidget(push2)
-        vbox.addWidget(push3)
-        vbox.addWidget(push4)
+        vbox.addWidget(push1, 0)
+        vbox.addWidget(push2, 1)
+        vbox.addWidget(push3, 2)
+        vbox.addWidget(push4, 5)
         vbox.addStretch(1)
         groupBox.setLayout(vbox)
 
@@ -149,21 +148,50 @@ class Window(QWidget):
     
     def image_transformation_group(self):
         groupBox = QGroupBox("3. imageTransformation")
+        groupBox1 = QGroupBox("3.1 Rotate, scale, translate")
+        groupBox2 = QGroupBox("Parameters")
+        
+        # parameters
+        label1 = QLabel()
+        label1.setText('Angle (degree)')
+        line1 = QLineEdit()
+        label2 = QLabel()
+        label2.setText('Scale')
+        line2 = QLineEdit()
+        label3 = QLabel()
+        label3.setText('Tx (pixel)')
+        line3 = QLineEdit()
+        label4 = QLabel()
+        label4.setText('Ty (pixel)')
+        line4 = QLineEdit()
 
+        vbox2 = QVBoxLayout()
+        vbox2.addWidget(label1)
+        vbox2.addWidget(line1)
+        vbox2.addWidget(label2)
+        vbox2.addWidget(line2)
+        vbox2.addWidget(label3)
+        vbox2.addWidget(line3)
+        vbox2.addWidget(label4)
+        vbox2.addWidget(line4)
+        vbox2.addStretch(1)
+        groupBox2.setLayout(vbox2)
+
+        # 3.1
         push1 = QPushButton("3.1 Rotation, scaling, translation")
-        groupBox1 = QGroupBox("3.1 Rot, scale, translation")
         vbox1 = QVBoxLayout()
+        vbox1.addWidget(groupBox2)
         vbox1.addWidget(push1)
         vbox1.addStretch(1)
         groupBox1.setLayout(vbox1)
 
+        # 3.2
         push2 = QPushButton("3.2 Perspective Transform")
-        vbox2 = QVBoxLayout()
-        vbox2.addWidget(groupBox1)
-        vbox2.addWidget(push2)
-        vbox2.addStretch(1)
-        groupBox1.setLayout(vbox2)
-
+        vbox = QVBoxLayout()
+        vbox.addWidget(groupBox1)
+        vbox.addWidget(push2)
+        vbox.addStretch(1)
+        groupBox.setLayout(vbox)
         return groupBox
 
     
