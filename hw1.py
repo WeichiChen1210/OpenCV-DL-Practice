@@ -5,6 +5,9 @@ import cv2
 import numpy as np
 import sys
 
+def nothing(x):
+    pass
+
 # open a new dialog, read picture with opencv and show image with Qt
 class showPicture(QDialog):
     def __init__(self):
@@ -74,6 +77,10 @@ class imgFipping(QDialog):
         self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
         self.image_frame.setPixmap(QPixmap.fromImage(self.img))
 
+# def blending(img1, img2):
+    
+    
+
 class Window(QWidget):
     def __init__(self, parent=None):
         super(self.__class__, self).__init__()
@@ -98,6 +105,7 @@ class Window(QWidget):
         push3 = QPushButton("1.3 Image Flipping")
         push3.clicked.connect(self.flip_image)
         push4 = QPushButton("1.4 Blending")
+        push4.clicked.connect(self.blend_image)
 
         vbox = QVBoxLayout()
         vbox.addWidget(push1)
@@ -186,6 +194,23 @@ class Window(QWidget):
 
         self.nd = imgFipping()
         self.nd.show()
+    
+    def blend_image(self):
+        cv2.namedWindow('Blend')
+        cv2.createTrackbar('blend', 'Blend', 0, 100, nothing)
+        img_origin = cv2.imread('./images/images/dog.bmp', -1)
+        img_flipped = cv2.flip(img_origin, 1)
+        while(1):
+            k = cv2.waitKey(1)
+            if k == 27:
+                break
+            percentage = cv2.getTrackbarPos('blend', 'Blend') / 100
+            dst = cv2.addWeighted(img_origin, 1-percentage, img_flipped, percentage, 0.0)
+            cv2.imshow('Blend', dst)
+            
+        cv2.destroyAllWindows()
+        # self.nd = blending()
+        # self.nd.show()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
