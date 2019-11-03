@@ -1,9 +1,14 @@
-from PyQt5.QtWidgets import (QDialog, QApplication, QGridLayout, QGroupBox, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit)
+from PyQt5.QtWidgets import (QDialog, QApplication, QGridLayout, QGroupBox, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QIcon, QPixmap, QImage
 import cv2
 import numpy as np
 import sys
+
+center_x = 130
+center_y = 125
+mouseX = -1
+mouseY = -1
 
 def nothing(x):
     pass
@@ -90,18 +95,31 @@ class Window(QWidget):
         grid.addWidget(self.convolution_group(), 0, 3)
         self.setLayout(grid)
 
-        self.setFixedSize(900, 480)
+        self.setFixedSize(900, 450)
         self.setWindowTitle("Image Processing")
+
+        self.points = []
+        self.img = np.zeros((512,512,3), np.uint8)
+
+    def draw_circle(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            cv2.circle(self.img, (x, y), 10, (0, 0, 255), -1)
+            # print(x, y)
+            self.points.append((x, y))
 
     def image_processing_group(self):
         groupBox = QGroupBox("1. Image Processing")
         push1 = QPushButton("1.1 Load Image", self)
+        # push1.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         push1.clicked.connect(self.load_image)
         push2 = QPushButton("1.2 Color Conversion")
+        # push2.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         push2.clicked.connect(self.convert_color)
         push3 = QPushButton("1.3 Image Flipping")
+        # push3.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         push3.clicked.connect(self.flip_image)
         push4 = QPushButton("1.4 Blending")
+        # push4.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         push4.clicked.connect(self.blend_image)
 
         vbox = QVBoxLayout()
@@ -109,7 +127,7 @@ class Window(QWidget):
         vbox.addWidget(push2, 1)
         vbox.addWidget(push3, 2)
         vbox.addWidget(push4, 5)
-        vbox.addStretch(1)
+        # vbox.addStretch(1)
         groupBox.setLayout(vbox)
 
         return groupBox
@@ -154,47 +172,48 @@ class Window(QWidget):
         # parameters
         label1 = QLabel()
         label1.setText('Angle (degree)')
-        line1 = QLineEdit()
+        self.line1 = QLineEdit()
         label2 = QLabel()
         label2.setText('Scale')
-        line2 = QLineEdit()
+        self.line2 = QLineEdit()
         label3 = QLabel()
         label3.setText('Tx (pixel)')
-        line3 = QLineEdit()
+        self.line3 = QLineEdit()
         label4 = QLabel()
         label4.setText('Ty (pixel)')
-        line4 = QLineEdit()
+        self.line4 = QLineEdit()
 
         vbox2 = QVBoxLayout()
         vbox2.addWidget(label1)
-        vbox2.addWidget(line1)
+        vbox2.addWidget(self.line1)
         vbox2.addWidget(label2)
-        vbox2.addWidget(line2)
+        vbox2.addWidget(self.line2)
         vbox2.addWidget(label3)
-        vbox2.addWidget(line3)
+        vbox2.addWidget(self.line3)
         vbox2.addWidget(label4)
-        vbox2.addWidget(line4)
+        vbox2.addWidget(self.line4)
         vbox2.addStretch(1)
         groupBox2.setLayout(vbox2)
 
         # 3.1
-        push1 = QPushButton("3.1 Rotation, scaling, translation")
+        self.push1 = QPushButton("3.1 Rotation, scaling, translation")
+        self.push1.clicked.connect(self.transformation)
         vbox1 = QVBoxLayout()
         vbox1.addWidget(groupBox2)
-        vbox1.addWidget(push1)
+        vbox1.addWidget(self.push1)
         vbox1.addStretch(1)
         groupBox1.setLayout(vbox1)
 
         # 3.2
-        push2 = QPushButton("3.2 Perspective Transform")
+        self.push2 = QPushButton("3.2 Perspective Transform")
+        self.push2.clicked.connect(self.perspective)
         vbox = QVBoxLayout()
         vbox.addWidget(groupBox1)
-        vbox.addWidget(push2)
+        vbox.addWidget(self.push2)
         vbox.addStretch(1)
         groupBox.setLayout(vbox)
         return groupBox
 
-    
 
     @pyqtSlot()    
     def load_image(self):
@@ -247,6 +266,55 @@ class Window(QWidget):
         cv2.imshow('Original image', origin_img)
         th1 = cv2.adaptiveThreshold(origin_img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 19, -1)
         cv2.imshow('Threshold image', th1)
+
+    def transformation(self):
+        angle = float(self.line1.text())
+        scale = float(self.line2.text())
+        tx = float(self.line3.text())
+        ty = float(self.line4.text())
+
+        origin_img = cv2.imread('./images/images/OriginalTransform.png')
+        cv2.imshow('Original image', origin_img)
+        img = origin_img.copy()
+        rows, cols = img.shape[:2]
+        
+        # rotation and scaling
+        M = cv2.getRotationMatrix2D((center_x, center_y), angle, scale)
+        result = cv2.warpAffine(img, M, (cols, rows))
+        # translation
+        H = np.float32([[1, 0, tx], [0, 1, ty]])
+        result = cv2.warpAffine(result, H, (cols, rows))
+
+        print(result.shape[:2])
+        cv2.imshow('Rotation + Scaling + Translation', result)
+
+    def perspective(self):
+        self.img = cv2.imread('./images/images/OriginalPerspective.png')
+        img = self.img.copy()
+        rows, cols = img.shape[:2]
+        cv2.namedWindow('Original image')
+        cv2.setMouseCallback('Original image', self.draw_circle)
+        pts2 = np.float32([[20, 20], [450, 20], [450, 450], [450, 20]])
+        while(1):
+            cv2.imshow('Original image', self.img)
+            k = cv2.waitKey(20) & 0xFF
+            if k == 27:
+                break
+            # elif k == ord('a'):
+            if len(self.points) == 4:
+                pts1 = np.float32(self.points)
+                # print(pts1)
+                # print(pts2)
+                matrix = cv2.getPerspectiveTransform(pts1, pts2)
+                result = cv2.warpPerspective(img, matrix, (rows, cols))
+                cv2.imshow('Perspective Result image', result)
+            #     flag = True
+            # if flag:
+            #     cv2.imshow('Perspective Result image', result)
+
+        cv2.destroyAllWindows()
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
