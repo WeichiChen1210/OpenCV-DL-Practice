@@ -4,6 +4,7 @@ from PyQt5.QtGui import QIcon, QPixmap, QImage
 import cv2
 import numpy as np
 import sys
+import math
 
 center_x = 130
 center_y = 125
@@ -82,7 +83,21 @@ class imgFipping(QDialog):
         self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
         self.image_frame.setPixmap(QPixmap.fromImage(self.img))
 
+def rgb_to_gray(origin_img):
+    r_channel = origin_img[:, :, 0].copy()
+    g_channel = origin_img[:, :, 0].copy()
+    b_channel = origin_img[:, :, 0].copy()
+    gray = 0.2126 * (r_channel/255) + 0.7152 * (g_channel/255) + 0.0722 * (b_channel/255)
+    return gray
 
+def convolution(gray, gaussian_kernel):
+    result = np.zeros_like(gray)
+    image_padded = np.zeros((gray.shape[0] + 2, gray.shape[1] + 2))
+    image_padded[1:-1, 1:-1] = gray
+    for x in range(gray.shape[1]):
+        for y in range(gray.shape[0]):
+            result[y, x] = (gaussian_kernel * image_padded[y:y+3, x:x+3]).sum()
+    return result
 
 class Window(QWidget):
     def __init__(self, parent=None):
@@ -152,8 +167,11 @@ class Window(QWidget):
         push1 = QPushButton("4.1 Gaussian")
         push1.clicked.connect(self.gaussian)
         push2 = QPushButton("4.2 Sobel X")
+        push2.clicked.connect(self.sobel_x)
         push3 = QPushButton("4.3 Sobel Y")
+        push3.clicked.connect(self.sobel_y)
         push4 = QPushButton("4.4 Magnitude")
+        push4.clicked.connect(self.magnitude)
 
         vbox = QVBoxLayout()
         vbox.addWidget(push1)
@@ -319,30 +337,71 @@ class Window(QWidget):
         
     def gaussian(self):
         origin_img = cv2.imread('./images/images/School.jpg')
-        # convert to grayscale
-        r_channel = origin_img[:, :, 0].copy()
-        g_channel = origin_img[:, :, 0].copy()
-        b_channel = origin_img[:, :, 0].copy()
-        gray = 0.2126 * (r_channel/255) + 0.7152 * (g_channel/255) + 0.0722 * (b_channel/255)
         cv2.imshow('Origin', origin_img)
-        cv2.imshow('grayscale', gray)
+        # convert to grayscale
+        gray = rgb_to_gray(origin_img)
+        # cv2.imshow('grayscale', gray)
 
         # 3*3 Gassian filter
         x, y = np.mgrid[-1:2, -1:2]
         gaussian_kernel = np.exp(-(x**2+y**2))
         sum = gaussian_kernel.sum()
         gaussian_kernel = gaussian_kernel / sum
-        print(gaussian_kernel)
+        # print(gaussian_kernel)
+
         # convolution
-        result = np.zeros_like(gray)
-        image_padded = np.zeros((gray.shape[0] + 2, gray.shape[1] + 2))
-        image_padded[1:-1, 1:-1] = gray
-        # print(image_padded)
-        for x in range(gray.shape[1]):
-            for y in range(gray.shape[0]):
-                result[y, x] = (gaussian_kernel * image_padded[y:y+3, x:x+3]).sum()
-        print(result.shape)
+        result = convolution(gray, gaussian_kernel)
         cv2.imshow('Gaussian Smooth', result)
+
+    def sobel_x(self):
+        origin_img = cv2.imread('./images/images/School.jpg')
+        cv2.imshow('Origin', origin_img)
+
+        # convert to grayscale
+        gray = rgb_to_gray(origin_img)
+
+        # sobel operator x
+        Gx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+        # print(Gx)
+
+        # convolution
+        result = convolution(gray, Gx)
+        # print(result.shape)
+        cv2.imshow('Sobel X', result)
+
+    def sobel_y(self):
+        origin_img = cv2.imread('./images/images/School.jpg')
+        cv2.imshow('Origin', origin_img)
+        # convert to grayscale
+        gray = rgb_to_gray(origin_img)
+
+        # sobel y
+        Gy = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
+        # print(Gy)
+
+        # convolution
+        result = convolution(gray, Gy)
+        # print(result.shape)
+        cv2.imshow('Sobel Y', result)
+
+    def magnitude(self):
+        origin_img = cv2.imread('./images/images/School.jpg')
+        cv2.imshow('Origin', origin_img)
+        
+        # convert to gray
+        gray = rgb_to_gray(origin_img)
+
+        # sobel
+        Gx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+        Gy = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
+        result_x = convolution(gray, Gx)
+        result_y = convolution(gray, Gy)
+
+        # mag: result array
+        mag = np.zeros_like(gray)
+        mag = np.sqrt(result_x ** 2 + result_y ** 2)
+        cv2.imshow('Magnitude', mag)
+        
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
