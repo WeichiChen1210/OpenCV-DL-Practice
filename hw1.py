@@ -150,6 +150,7 @@ class Window(QWidget):
     def convolution_group(self):
         groupBox = QGroupBox("4. Convolution")
         push1 = QPushButton("4.1 Gaussian")
+        push1.clicked.connect(self.gaussian)
         push2 = QPushButton("4.2 Sobel X")
         push3 = QPushButton("4.3 Sobel Y")
         push4 = QPushButton("4.4 Magnitude")
@@ -290,31 +291,58 @@ class Window(QWidget):
 
     def perspective(self):
         self.img = cv2.imread('./images/images/OriginalPerspective.png')
+        result = None
+        pts1, pts2 = None, None
         img = self.img.copy()
-        rows, cols = img.shape[:2]
         cv2.namedWindow('Original image')
         cv2.setMouseCallback('Original image', self.draw_circle)
-        pts2 = np.float32([[20, 20], [450, 20], [450, 450], [450, 20]])
+        pts2 = np.float32([[20, 20], [450, 20], [450, 450], [20, 450]])
+        flag = False
+
         while(1):
             cv2.imshow('Original image', self.img)
+            if flag:
+                break
             k = cv2.waitKey(20) & 0xFF
             if k == 27:
                 break
-            # elif k == ord('a'):
+
             if len(self.points) == 4:
                 pts1 = np.float32(self.points)
+                flag = True
                 # print(pts1)
                 # print(pts2)
-                matrix = cv2.getPerspectiveTransform(pts1, pts2)
-                result = cv2.warpPerspective(img, matrix, (rows, cols))
-                cv2.imshow('Perspective Result image', result)
-            #     flag = True
-            # if flag:
-            #     cv2.imshow('Perspective Result image', result)
+                
+        matrix = cv2.getPerspectiveTransform(pts1, pts2)
+        result = cv2.warpPerspective(img, matrix, (450, 450), flags=cv2.INTER_LINEAR)
+        cv2.imshow('Perspective Result image', result)
+        
+    def gaussian(self):
+        origin_img = cv2.imread('./images/images/School.jpg')
+        # convert to grayscale
+        r_channel = origin_img[:, :, 0].copy()
+        g_channel = origin_img[:, :, 0].copy()
+        b_channel = origin_img[:, :, 0].copy()
+        gray = 0.2126 * (r_channel/255) + 0.7152 * (g_channel/255) + 0.0722 * (b_channel/255)
+        cv2.imshow('Origin', origin_img)
+        cv2.imshow('grayscale', gray)
 
-        cv2.destroyAllWindows()
-
-
+        # 3*3 Gassian filter
+        x, y = np.mgrid[-1:2, -1:2]
+        gaussian_kernel = np.exp(-(x**2+y**2))
+        sum = gaussian_kernel.sum()
+        gaussian_kernel = gaussian_kernel / sum
+        print(gaussian_kernel)
+        # convolution
+        result = np.zeros_like(gray)
+        image_padded = np.zeros((gray.shape[0] + 2, gray.shape[1] + 2))
+        image_padded[1:-1, 1:-1] = gray
+        # print(image_padded)
+        for x in range(gray.shape[1]):
+            for y in range(gray.shape[0]):
+                result[y, x] = (gaussian_kernel * image_padded[y:y+3, x:x+3]).sum()
+        print(result.shape)
+        cv2.imshow('Gaussian Smooth', result)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
