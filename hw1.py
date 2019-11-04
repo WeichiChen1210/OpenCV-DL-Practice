@@ -1,15 +1,32 @@
 from PyQt5.QtWidgets import (QDialog, QApplication, QGridLayout, QGroupBox, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QIcon, QPixmap, QImage
+
 import cv2
 import numpy as np
 import sys
-import math
+import random
 
+import torch
+import torchvision
+from torch.utils.data import DataLoader
+# from torch.utils.data.sampler import SubsetRandomSampler
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.use('tkAgg')
+
+EPOCH = 3
+BATCH_SIZE_TRAIN = 64
+BATCH_SIZE_TEST = 1000
 center_x = 130
 center_y = 125
 mouseX = -1
 mouseY = -1
+
+train_loader, test_loader = None, None
 
 def nothing(x):
     pass
@@ -99,6 +116,37 @@ def convolution(gray, gaussian_kernel):
             result[y, x] = (gaussian_kernel * image_padded[y:y+3, x:x+3]).sum()
     return result
 
+def train_initializer():
+    data_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+
+    train_data = datasets.MNIST('./', train=True, download=True, transform=data_transform)
+    global train_loader
+    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
+
+    test_data = datasets.MNIST('./', train=False, download=True, transform=data_transform)
+    global test_loader
+    test_loader = DataLoader(test_data, batch_size=BATCH_SIZE_TEST, shuffle=True)
+
+def random_show_image():
+    global train_loader
+    pics = enumerate(train_loader)
+    print(pics)
+    batch_idx, (data, labels) = next(pics)
+
+    print(data.shape)
+    print(labels.shape)
+    # fig = plt.figure()
+    for i in range(10):
+        index = random.randint(0, 64)
+        plt.subplot(1, 10, i+1)
+        plt.tight_layout()
+        plt.imshow(data[index][0], cmap='gray', interpolation='none')
+        plt.title("{}".format(labels[index]))
+        plt.xticks([])
+        plt.yticks([])
+    plt.show()
+
+
 class Window(QWidget):
     def __init__(self, parent=None):
         super(self.__class__, self).__init__()
@@ -108,6 +156,7 @@ class Window(QWidget):
         grid.addWidget(self.adaptive_threshold_group(), 0, 1)
         grid.addWidget(self.image_transformation_group(), 0, 2)
         grid.addWidget(self.convolution_group(), 0, 3)
+        grid.addWidget(self.training_group(), 0, 4)
         self.setLayout(grid)
 
         self.setFixedSize(900, 450)
@@ -161,28 +210,7 @@ class Window(QWidget):
         groupBox.setLayout(vbox)
 
         return groupBox
-    
-    def convolution_group(self):
-        groupBox = QGroupBox("4. Convolution")
-        push1 = QPushButton("4.1 Gaussian")
-        push1.clicked.connect(self.gaussian)
-        push2 = QPushButton("4.2 Sobel X")
-        push2.clicked.connect(self.sobel_x)
-        push3 = QPushButton("4.3 Sobel Y")
-        push3.clicked.connect(self.sobel_y)
-        push4 = QPushButton("4.4 Magnitude")
-        push4.clicked.connect(self.magnitude)
 
-        vbox = QVBoxLayout()
-        vbox.addWidget(push1)
-        vbox.addWidget(push2)
-        vbox.addWidget(push3)
-        vbox.addWidget(push4)
-        vbox.addStretch(1)
-        groupBox.setLayout(vbox)
-
-        return groupBox
-    
     def image_transformation_group(self):
         groupBox = QGroupBox("3. imageTransformation")
         groupBox1 = QGroupBox("3.1 Rotate, scale, translate")
@@ -232,8 +260,54 @@ class Window(QWidget):
         vbox.addStretch(1)
         groupBox.setLayout(vbox)
         return groupBox
+    
+    def convolution_group(self):
+        groupBox = QGroupBox("4. Convolution")
+        push1 = QPushButton("4.1 Gaussian")
+        push1.clicked.connect(self.gaussian)
+        push2 = QPushButton("4.2 Sobel X")
+        push2.clicked.connect(self.sobel_x)
+        push3 = QPushButton("4.3 Sobel Y")
+        push3.clicked.connect(self.sobel_y)
+        push4 = QPushButton("4.4 Magnitude")
+        push4.clicked.connect(self.magnitude)
 
+        vbox = QVBoxLayout()
+        vbox.addWidget(push1)
+        vbox.addWidget(push2)
+        vbox.addWidget(push3)
+        vbox.addWidget(push4)
+        vbox.addStretch(1)
+        groupBox.setLayout(vbox)
 
+        return groupBox
+
+    def training_group(self):
+        groupBox = QGroupBox("5. Training on LeNet5")
+        push1 = QPushButton("5.1 Show train images")
+        push1.clicked.connect(self.show_train_image)
+        push2 = QPushButton("5.2 Show hyperparameters")
+        
+        push3 = QPushButton("5.3 Train 1 epoch")
+        
+        push4 = QPushButton("5.5 Inference")
+
+        label = QLabel()
+        label.setText('Test Image Index: ')
+        self.line1 = QLineEdit()        
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(push1)
+        vbox.addWidget(push2)
+        vbox.addWidget(push3)
+        vbox.addWidget(label)
+        vbox.addWidget(self.line1)
+        vbox.addWidget(push4)
+        vbox.addStretch(1)
+        groupBox.setLayout(vbox)
+
+        return groupBox
+    
     @pyqtSlot()    
     def load_image(self):
         # img = cv2.imread('./images/images/dog.bmp', -1)
@@ -401,7 +475,10 @@ class Window(QWidget):
         mag = np.zeros_like(gray)
         mag = np.sqrt(result_x ** 2 + result_y ** 2)
         cv2.imshow('Magnitude', mag)
-        
+    
+    def show_train_image(self):
+        train_initializer()
+        random_show_image()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
