@@ -8,9 +8,11 @@ import sys
 import random
 
 import torch
+from torch import nn, optim
+import torch.nn.functional as F
+from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision
 from torch.utils.data import DataLoader
-# from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
@@ -18,19 +20,24 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 mpl.use('tkAgg')
 
-EPOCH = 3
-BATCH_SIZE_TRAIN = 64
-BATCH_SIZE_TEST = 1000
+EPOCH = 5
+BATCH_SIZE = 64
+TRAIN_NUMS = 49000
+PRINT_FREQ = 100
+learning_rate = 0.001
+log_interval = 10
+optimizer = None
+train_loader, test_loader = None, None
+
 center_x = 130
 center_y = 125
 mouseX = -1
 mouseY = -1
 
-train_loader, test_loader = None, None
-
 def nothing(x):
     pass
 
+############################################## 
 # open a new dialog, read picture with opencv and show image with Qt
 class showPicture(QDialog):
     def __init__(self):
@@ -100,6 +107,8 @@ class imgFipping(QDialog):
         self.img = QImage(self.img.data, width, height, bytesPerLine, QImage.Format_RGB888).rgbSwapped()
         self.image_frame.setPixmap(QPixmap.fromImage(self.img))
 
+##############################################
+# image operations
 def rgb_to_gray(origin_img):
     r_channel = origin_img[:, :, 0].copy()
     g_channel = origin_img[:, :, 0].copy()
@@ -116,28 +125,42 @@ def convolution(gray, gaussian_kernel):
             result[y, x] = (gaussian_kernel * image_padded[y:y+3, x:x+3]).sum()
     return result
 
-def train_initializer():
-    data_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+def gaussian_smooth():
+    # 3*3 Gassian filter
+    x, y = np.mgrid[-1:2, -1:2]
+    gaussian_kernel = np.exp(-(x**2+y**2))
+    sum = gaussian_kernel.sum()
+    gaussian_kernel = gaussian_kernel / sum
+    # print(gaussian_kernel)
+    return gaussian_kernel
 
-    train_data = datasets.MNIST('./', train=True, download=True, transform=data_transform)
-    global train_loader
-    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
+##############################################
+# dataset preparations
 
-    test_data = datasets.MNIST('./', train=False, download=True, transform=data_transform)
-    global test_loader
-    test_loader = DataLoader(test_data, batch_size=BATCH_SIZE_TEST, shuffle=True)
+data_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+
+# prepare train data
+train_data = datasets.MNIST('./', train=True, download=True, transform=data_transform)
+# global train_loader
+train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
+
+# prepare test data
+test_data = datasets.MNIST('./', train=False, download=True, transform=data_transform)
+# global test_loader
+test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True)
+
+val_loader = DataLoader(train_data, batch_size=BATCH_SIZE, sampler=SubsetRandomSampler(range(TRAIN_NUMS, 50000)))
 
 def random_show_image():
     global train_loader
     pics = enumerate(train_loader)
-    print(pics)
     batch_idx, (data, labels) = next(pics)
 
-    print(data.shape)
-    print(labels.shape)
-    # fig = plt.figure()
+    # print(data.shape)
+    # print(labels.shape)
+    fig = plt.figure('10 Random Images')
     for i in range(10):
-        index = random.randint(0, 64)
+        index = random.randint(0, 64) % 64
         plt.subplot(1, 10, i+1)
         plt.tight_layout()
         plt.imshow(data[index][0], cmap='gray', interpolation='none')
@@ -146,6 +169,144 @@ def random_show_image():
         plt.yticks([])
     plt.show()
 
+##############################################
+# Trainer class
+class Trainer:
+    def __init__(self, criterion, optimizer, device):
+        self.criterion = criterion
+        self.optimizer = optimizer
+        
+        self.device = device
+        self.accuracy = 0
+        self.loss = 0
+        self.loss_list = []
+        self.iter_loss_list = []
+        self.train_acc_list = []
+        self.test_acc_list = []
+
+    def train_loop(self, model, train_loader, val_loader):
+        self.train_acc_list.clear()
+        self.loss_list.clear()
+
+        for epoch in range(EPOCH):
+            print("---------------- Epoch {} ----------------".format(epoch+1))
+            self._training_step(model, train_loader, epoch)
+
+            # validation
+            self._validate(model, val_loader, epoch)
+
+            # testing
+            self._validate(model, test_loader, epoch, state="Testing")
+    
+    def test(self, model, test_loader):
+            print("---------------- Testing ----------------")
+            self._validate(model, test_loader, 0, state="Testing")
+            
+    def _training_step(self, model, loader, epoch):
+        model.train()
+        sum = 0
+        for step, (X, y) in enumerate(loader):
+            X, y = X.to(self.device), y.to(self.device)
+            N = X.shape[0]
+            
+            self.optimizer.zero_grad()
+            outs = model(X)
+            loss = self.criterion(outs, y)
+            # save loss every iteration
+            self.iter_loss_list.append(loss)
+
+            if step >= 0 and (step % PRINT_FREQ == 0):
+                self._state_logging(outs, y, loss, step, epoch, "Training")
+            
+            loss.backward()
+            self.optimizer.step()
+
+        # save training accuracy and loss every epoch
+        self.train_acc_list.append(self.accuracy)
+        self.loss_list.append(self.loss)
+        self.accuracy = 0
+        self.loss = 0
+            
+    def _validate(self, model, loader, epoch, state="Validate"):
+        model.eval()
+        outs_list = []
+        loss_list = []
+        y_list = []
+        
+        with torch.no_grad():
+            for step, (X, y) in enumerate(loader):
+                X, y = X.to(self.device), y.to(self.device)
+                N = X.shape[0]
+                
+                outs = model(X)
+                loss = self.criterion(outs, y)
+                
+                y_list.append(y)
+                outs_list.append(outs)
+                loss_list.append(loss)
+            
+            y = torch.cat(y_list)
+            outs = torch.cat(outs_list)
+            loss = torch.mean(torch.stack(loss_list), dim=0)
+            self._state_logging(outs, y, loss, step, epoch, state)
+        
+        # Save testing accuracy every epoch
+        if state == "Testing":
+            self.test_acc_list.append(self.accuracy)
+        self.accuracy = 0
+        self.loss = 0                
+                
+    def _state_logging(self, outs, y, loss, step, epoch, state):
+        acc = self._accuracy(outs, y)
+        print("[{:3d}/{}] {} Step {:03d} Loss {:.3f} Acc {:.3f}".format(epoch+1, EPOCH, state, step, loss, acc))
+        
+        # save accuracy and loss every 100 iterations
+        self.accuracy = acc
+        self.loss = loss
+
+    def _accuracy(self, output, target):
+        batch_size = target.size(0)
+
+        pred = output.argmax(1)
+        correct = pred.eq(target)
+        acc = correct.float().sum(0) / batch_size
+
+        return acc
+
+##############################################
+# CNN models
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def flatten(x):    
+    # x = torch.flatten(x, start_dim=1)
+    x = x.view(x.shape[0], x.shape[1]*x.shape[2]*x.shape[3])
+    return x
+
+class Flatten(nn.Module):
+    def forward(self, x):
+        return flatten(x)
+
+model = None          
+model = nn.Sequential(
+    nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, padding=2),
+    nn.ReLU(),
+    nn.MaxPool2d(2),
+    nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5),
+    nn.ReLU(),
+    nn.MaxPool2d(2),
+    Flatten(),
+    nn.Linear(16*5*5, 120),
+    nn.ReLU(),
+    nn.Linear(120, 84),
+    nn.ReLU(),
+    nn.Linear(84, 10)
+    )
+
+model.cuda()
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(params=model.parameters(),lr=learning_rate, momentum=0.9)
+# print(optimizer)
+# print(model)
 
 class Window(QWidget):
     def __init__(self, parent=None):
@@ -159,7 +320,7 @@ class Window(QWidget):
         grid.addWidget(self.training_group(), 0, 4)
         self.setLayout(grid)
 
-        self.setFixedSize(900, 450)
+        self.setFixedSize(1100, 450)
         self.setWindowTitle("Image Processing")
 
         self.points = []
@@ -287,10 +448,13 @@ class Window(QWidget):
         push1 = QPushButton("5.1 Show train images")
         push1.clicked.connect(self.show_train_image)
         push2 = QPushButton("5.2 Show hyperparameters")
-        
+        push2.clicked.connect(self.show_hyperpara)
         push3 = QPushButton("5.3 Train 1 epoch")
+        push3.clicked.connect(self.train_one_epoch)
         
-        push4 = QPushButton("5.5 Inference")
+        push4 = QPushButton("5.4 Show training result")
+        push4.clicked.connect(self.train)
+        push5 = QPushButton("5.5 Inference")
 
         label = QLabel()
         label.setText('Test Image Index: ')
@@ -300,15 +464,17 @@ class Window(QWidget):
         vbox.addWidget(push1)
         vbox.addWidget(push2)
         vbox.addWidget(push3)
+        vbox.addWidget(push4)
         vbox.addWidget(label)
         vbox.addWidget(self.line1)
-        vbox.addWidget(push4)
+        vbox.addWidget(push5)
         vbox.addStretch(1)
         groupBox.setLayout(vbox)
 
         return groupBox
     
-    @pyqtSlot()    
+    @pyqtSlot()
+    # Problem 1
     def load_image(self):
         # img = cv2.imread('./images/images/dog.bmp', -1)
         # cv2.imshow('picture', img)
@@ -348,6 +514,7 @@ class Window(QWidget):
             
         cv2.destroyAllWindows()
 
+    # Problem 2
     def global_threshold(self):
         origin_img = cv2.imread('./images/images/QR.png', 0)
         cv2.imshow('Original image', origin_img)
@@ -360,6 +527,7 @@ class Window(QWidget):
         th1 = cv2.adaptiveThreshold(origin_img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 19, -1)
         cv2.imshow('Threshold image', th1)
 
+    # Problem 3
     def transformation(self):
         angle = float(self.line1.text())
         scale = float(self.line2.text())
@@ -408,20 +576,16 @@ class Window(QWidget):
         matrix = cv2.getPerspectiveTransform(pts1, pts2)
         result = cv2.warpPerspective(img, matrix, (450, 450), flags=cv2.INTER_LINEAR)
         cv2.imshow('Perspective Result image', result)
-        
+    
+    # Problem 4
     def gaussian(self):
         origin_img = cv2.imread('./images/images/School.jpg')
         cv2.imshow('Origin', origin_img)
         # convert to grayscale
         gray = rgb_to_gray(origin_img)
-        # cv2.imshow('grayscale', gray)
 
-        # 3*3 Gassian filter
-        x, y = np.mgrid[-1:2, -1:2]
-        gaussian_kernel = np.exp(-(x**2+y**2))
-        sum = gaussian_kernel.sum()
-        gaussian_kernel = gaussian_kernel / sum
-        # print(gaussian_kernel)
+        # generate filter
+        gaussian_kernel = gaussian_smooth()
 
         # convolution
         result = convolution(gray, gaussian_kernel)
@@ -434,13 +598,19 @@ class Window(QWidget):
         # convert to grayscale
         gray = rgb_to_gray(origin_img)
 
+        # generate filter
+        gaussian_kernel = gaussian_smooth()
+        # print(gaussian_kernel)
+
+        # convolution for Gaussian Smooth
+        smooth = convolution(gray, gaussian_kernel)
+
         # sobel operator x
         Gx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
-        # print(Gx)
 
-        # convolution
-        result = convolution(gray, Gx)
-        # print(result.shape)
+        # convolution for Sobel X
+        result = convolution(smooth, Gx)
+        
         cv2.imshow('Sobel X', result)
 
     def sobel_y(self):
@@ -449,13 +619,18 @@ class Window(QWidget):
         # convert to grayscale
         gray = rgb_to_gray(origin_img)
 
+        # generate filter
+        gaussian_kernel = gaussian_smooth()
+
+        # convolution for Gaussian Smooth
+        smooth = convolution(gray, gaussian_kernel)
+
         # sobel y
         Gy = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
-        # print(Gy)
 
-        # convolution
-        result = convolution(gray, Gy)
-        # print(result.shape)
+        # convolution for Sobel Y
+        result = convolution(smooth, Gy)
+        
         cv2.imshow('Sobel Y', result)
 
     def magnitude(self):
@@ -465,20 +640,87 @@ class Window(QWidget):
         # convert to gray
         gray = rgb_to_gray(origin_img)
 
+        # generate filter
+        gaussian_kernel = gaussian_smooth()
+        # print(gaussian_kernel)
+
+        # convolution
+        smooth = convolution(gray, gaussian_kernel)
+
         # sobel
         Gx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
         Gy = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
-        result_x = convolution(gray, Gx)
-        result_y = convolution(gray, Gy)
+        result_x = convolution(smooth, Gx)
+        result_y = convolution(smooth, Gy)
 
-        # mag: result array
-        mag = np.zeros_like(gray)
+        # calculate magnitude
+        mag = np.zeros_like(smooth)
         mag = np.sqrt(result_x ** 2 + result_y ** 2)
+        cv2.imshow('X', result_x)
+        cv2.imshow('Y', result_y)
         cv2.imshow('Magnitude', mag)
-    
+
+    # Problem 5    
     def show_train_image(self):
-        train_initializer()
+        # dataset_initializer()
         random_show_image()
+    
+    def show_hyperpara(self):
+        print('hyperparameters:')
+        print('batch size: ', BATCH_SIZE)
+        print('learning rate: ', learning_rate)
+        print('optimizer: SGD')
+
+    def train_one_epoch(self):
+        # training
+        global EPOCH
+        EPOCH = 1
+        trainer = Trainer(criterion, optimizer, device)
+        trainer.train_loop(model, train_loader, val_loader)
+        # trainer.test(model, test_loader)
+
+        loss_list = trainer.iter_loss_list
+        num = len(loss_list)
+        # get list of loss
+        loss = []
+        for item in loss_list:
+            loss.append(item.item())
+        trainer.iter_loss_list.clear()
+        # plot loss
+        plt.plot(range(num), loss)
+        plt.xlabel('iterations')
+        plt.ylabel('loss')
+        plt.title('Epoch[1/50]')
+        plt.show()
+
+    def train(self):
+        global EPOCH
+        global model
+        EPOCH = 50
+        trainer = Trainer(criterion, optimizer, device)
+        trainer.train_loop(model, train_loader, val_loader)
+        # trainer.test(model, test_loader)
+
+        print(len(trainer.train_acc_list))
+        print(len(trainer.test_acc_list))
+        print(len(trainer.loss_list))
+        tr_acc = trainer.train_acc_list
+        te_acc = trainer.test_acc_list
+        loss_list = trainer.loss_list
+        loss = []
+        train_acc = []
+        test_acc = []
+        for item in loss_list:
+            loss.append(item.item())
+        for item in tr_acc:
+            train_acc.append(item.item())
+        for item in te_acc:
+            test_acc.append(item.item())
+        print(loss)
+        print(train_acc)
+        print(test_acc)
+        
+        torch.save(model, './Model/model.pth')
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
