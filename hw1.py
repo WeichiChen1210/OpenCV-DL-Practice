@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (QDialog, QApplication, QGridLayout, QGroupBox, QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QSizePolicy)
+from PyQt5.QtWidgets import (QDialog, QApplication, QGridLayout, QGroupBox, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QLineEdit, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QIcon, QPixmap, QImage
 
@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 mpl.use('tkAgg')
 
+PATH = "./Model/model.pth"
 EPOCH = 5
 BATCH_SIZE = 64
 TRAIN_NUMS = 49000
@@ -143,24 +144,24 @@ data_transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize
 train_data = datasets.MNIST('./', train=True, download=True, transform=data_transform)
 # global train_loader
 train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
+train_loader_all = DataLoader(train_data, batch_size=10000, shuffle=True)
 
 # prepare test data
 test_data = datasets.MNIST('./', train=False, download=True, transform=data_transform)
 # global test_loader
 test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=True)
+test_loader_all = DataLoader(test_data, batch_size=10000, shuffle=True)
 
 val_loader = DataLoader(train_data, batch_size=BATCH_SIZE, sampler=SubsetRandomSampler(range(TRAIN_NUMS, 50000)))
 
 def random_show_image():
     global train_loader
-    pics = enumerate(train_loader)
+    pics = enumerate(train_loader_all)
     batch_idx, (data, labels) = next(pics)
 
-    # print(data.shape)
-    # print(labels.shape)
     fig = plt.figure('10 Random Images')
     for i in range(10):
-        index = random.randint(0, 64) % 64
+        index = random.randint(0, 10000)
         plt.subplot(1, 10, i+1)
         plt.tight_layout()
         plt.imshow(data[index][0], cmap='gray', interpolation='none')
@@ -204,7 +205,6 @@ class Trainer:
             
     def _training_step(self, model, loader, epoch):
         model.train()
-        sum = 0
         for step, (X, y) in enumerate(loader):
             X, y = X.to(self.device), y.to(self.device)
             N = X.shape[0]
@@ -220,12 +220,6 @@ class Trainer:
             
             loss.backward()
             self.optimizer.step()
-
-        # save training accuracy and loss every epoch
-        self.train_acc_list.append(self.accuracy)
-        self.loss_list.append(self.loss)
-        self.accuracy = 0
-        self.loss = 0
             
     def _validate(self, model, loader, epoch, state="Validate"):
         model.eval()
@@ -253,6 +247,9 @@ class Trainer:
         # Save testing accuracy every epoch
         if state == "Testing":
             self.test_acc_list.append(self.accuracy)
+        else:
+            self.train_acc_list.append(self.accuracy)
+            self.loss_list.append(self.loss)
         self.accuracy = 0
         self.loss = 0                
                 
@@ -274,7 +271,7 @@ class Trainer:
         return acc
 
 ##############################################
-# CNN models
+# LeNet5 CNN models
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def flatten(x):    
@@ -282,32 +279,37 @@ def flatten(x):
     x = x.view(x.shape[0], x.shape[1]*x.shape[2]*x.shape[3])
     return x
 
-class Flatten(nn.Module):
+class LeNet5(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv1, self.conv2 = None, None
+        self.fc1, self.fc2, self.fc3 = None, None, None
+        
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5)
+
+        self.fc1 = nn.Linear(16*5*5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3  = nn.Linear(84, 10)
+    
     def forward(self, x):
-        return flatten(x)
+        out = None
+        out = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
+        out = F.max_pool2d(F.relu(self.conv2(out)), (2, 2))
+        out = flatten(out)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = self.fc3(out)
+        return out
 
-model = None          
-model = nn.Sequential(
-    nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, padding=2),
-    nn.ReLU(),
-    nn.MaxPool2d(2),
-    nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5),
-    nn.ReLU(),
-    nn.MaxPool2d(2),
-    Flatten(),
-    nn.Linear(16*5*5, 120),
-    nn.ReLU(),
-    nn.Linear(120, 84),
-    nn.ReLU(),
-    nn.Linear(84, 10)
-    )
-
+model = LeNet5()
 model.cuda()
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(params=model.parameters(),lr=learning_rate, momentum=0.9)
-# print(optimizer)
-# print(model)
 
+##############################################
+# GUI
 class Window(QWidget):
     def __init__(self, parent=None):
         super(self.__class__, self).__init__()
@@ -320,8 +322,8 @@ class Window(QWidget):
         grid.addWidget(self.training_group(), 0, 4)
         self.setLayout(grid)
 
-        self.setFixedSize(1100, 450)
-        self.setWindowTitle("Image Processing")
+        self.setFixedSize(1000, 300)
+        self.setWindowTitle("HW1")
 
         self.points = []
         self.img = np.zeros((512,512,3), np.uint8)
@@ -352,7 +354,7 @@ class Window(QWidget):
         vbox.addWidget(push2, 1)
         vbox.addWidget(push3, 2)
         vbox.addWidget(push4, 5)
-        # vbox.addStretch(1)
+        vbox.addStretch(1)
         groupBox.setLayout(vbox)
 
         return groupBox
@@ -379,27 +381,36 @@ class Window(QWidget):
         
         # parameters
         label1 = QLabel()
-        label1.setText('Angle (degree)')
+        label1.setText('Angle (degree): ')
         self.line1 = QLineEdit()
         label2 = QLabel()
-        label2.setText('Scale')
+        label2.setText('Scale:')
         self.line2 = QLineEdit()
         label3 = QLabel()
-        label3.setText('Tx (pixel)')
+        label3.setText('Tx (pixel): ')
         self.line3 = QLineEdit()
         label4 = QLabel()
-        label4.setText('Ty (pixel)')
+        label4.setText('Ty (pixel): ')
         self.line4 = QLineEdit()
 
+        hbox1 = QHBoxLayout()
+        hbox1.addWidget(label1)
+        hbox1.addWidget(self.line1)
+        hbox2 = QHBoxLayout()
+        hbox2.addWidget(label2)
+        hbox2.addWidget(self.line2)
+        hbox3 = QHBoxLayout()
+        hbox3.addWidget(label3)
+        hbox3.addWidget(self.line3)
+        hbox4 = QHBoxLayout()
+        hbox4.addWidget(label4)
+        hbox4.addWidget(self.line4)
+
         vbox2 = QVBoxLayout()
-        vbox2.addWidget(label1)
-        vbox2.addWidget(self.line1)
-        vbox2.addWidget(label2)
-        vbox2.addWidget(self.line2)
-        vbox2.addWidget(label3)
-        vbox2.addWidget(self.line3)
-        vbox2.addWidget(label4)
-        vbox2.addWidget(self.line4)
+        vbox2.addLayout(hbox1)
+        vbox2.addLayout(hbox2)
+        vbox2.addLayout(hbox3)
+        vbox2.addLayout(hbox4)
         vbox2.addStretch(1)
         groupBox2.setLayout(vbox2)
 
@@ -450,23 +461,25 @@ class Window(QWidget):
         push2 = QPushButton("5.2 Show hyperparameters")
         push2.clicked.connect(self.show_hyperpara)
         push3 = QPushButton("5.3 Train 1 epoch")
-        push3.clicked.connect(self.train_one_epoch)
-        
+        push3.clicked.connect(self.train_one_epoch)        
         push4 = QPushButton("5.4 Show training result")
-        push4.clicked.connect(self.train)
+        push4.clicked.connect(self.show_train_result)
         push5 = QPushButton("5.5 Inference")
-
+        push5.clicked.connect(self.inference)
         label = QLabel()
         label.setText('Test Image Index: ')
-        self.line1 = QLineEdit()        
+        self.line1 = QLineEdit()
+        self.line1.setPlaceholderText('0~9999')
 
+        hbox = QHBoxLayout()
+        hbox.addWidget(label)
+        hbox.addWidget(self.line1)
         vbox = QVBoxLayout()
         vbox.addWidget(push1)
         vbox.addWidget(push2)
         vbox.addWidget(push3)
         vbox.addWidget(push4)
-        vbox.addWidget(label)
-        vbox.addWidget(self.line1)
+        vbox.addLayout(hbox)
         vbox.addWidget(push5)
         vbox.addStretch(1)
         groupBox.setLayout(vbox)
@@ -476,28 +489,28 @@ class Window(QWidget):
     @pyqtSlot()
     # Problem 1
     def load_image(self):
-        # img = cv2.imread('./images/images/dog.bmp', -1)
-        # cv2.imshow('picture', img)
-        self.nd = showPicture()
-        self.nd.show()
+        img = cv2.imread('./images/images/dog.bmp', -1)
+        cv2.imshow('picture', img)
+        # self.nd = showPicture()
+        # self.nd.show()
     
     def convert_color(self):
         # [:, :, 0] b [:, :, 1] g [:, :, 2] r
-        # img = cv2.imread('./images/images/color.png', -1)
-        # temp = img.copy()
-        # img[:, :, 0] = temp[:, :, 1].copy()
-        # img[:, :, 1] = temp[:, :, 2].copy()
-        # img[:, :, 2] = temp[:, :, 0].copy()
-        # cv2.imshow('picture', img)
-        self.nd = colorConvert()
-        self.nd.show()
+        img = cv2.imread('./images/images/color.png', -1)
+        temp = img.copy()
+        img[:, :, 0] = temp[:, :, 1].copy()
+        img[:, :, 1] = temp[:, :, 2].copy()
+        img[:, :, 2] = temp[:, :, 0].copy()
+        cv2.imshow('picture', img)
+        # self.nd = colorConvert()
+        # self.nd.show()
 
     def flip_image(self):
-        # img = cv2.imread('./images/images/dog.bmp', -1)
-        # img = cv2.flip(img, 1)
-        # cv2.imshow('picture', img)
-        self.nd = imgFipping()
-        self.nd.show()
+        img = cv2.imread('./images/images/dog.bmp', -1)
+        img = cv2.flip(img, 1)
+        cv2.imshow('picture', img)
+        # self.nd = imgFipping()
+        # self.nd.show()
     
     def blend_image(self):
         cv2.namedWindow('Blend')
@@ -656,8 +669,8 @@ class Window(QWidget):
         # calculate magnitude
         mag = np.zeros_like(smooth)
         mag = np.sqrt(result_x ** 2 + result_y ** 2)
-        cv2.imshow('X', result_x)
-        cv2.imshow('Y', result_y)
+        # cv2.imshow('X', result_x)
+        # cv2.imshow('Y', result_y)
         cv2.imshow('Magnitude', mag)
 
     # Problem 5    
@@ -697,13 +710,14 @@ class Window(QWidget):
         global EPOCH
         global model
         EPOCH = 50
+        
+        # initialize trainer
         trainer = Trainer(criterion, optimizer, device)
+        # start training
         trainer.train_loop(model, train_loader, val_loader)
         # trainer.test(model, test_loader)
 
-        print(len(trainer.train_acc_list))
-        print(len(trainer.test_acc_list))
-        print(len(trainer.loss_list))
+        # get accuracy and loss lists
         tr_acc = trainer.train_acc_list
         te_acc = trainer.test_acc_list
         loss_list = trainer.loss_list
@@ -716,11 +730,69 @@ class Window(QWidget):
             train_acc.append(item.item())
         for item in te_acc:
             test_acc.append(item.item())
-        print(loss)
-        print(train_acc)
-        print(test_acc)
         
-        torch.save(model, './Model/model.pth')
+        # multiply by 100
+        train_acc = [i * 100 for i in train_acc]
+        test_acc = [i * 100 for i in test_acc]
+        
+        # plot
+        plt.figure('Accuracy')
+        plt.ylim(0, 100)
+        plt.plot(range(1, EPOCH+1), train_acc, label='train')
+        plt.plot(range(1, EPOCH+1), test_acc, label='test')
+        plt.xlabel('EPOCH')
+        plt.ylabel('%')
+        plt.title('Accuracy')
+        plt.legend(loc='lower right')
+        plt.savefig('./accuracy.png')
+
+        plt.figure('Loss')
+        plt.plot(range(1, EPOCH+1), loss)
+        plt.xlabel('EPOCH')
+        plt.ylabel('loss')
+        plt.title('Loss')
+        plt.savefig('./loss.png')
+        # plt.show()
+
+        # save model
+        torch.save(model.state_dict(), PATH)
+    
+    def show_train_result(self):
+        acc = cv2.imread('./accuracy.png')
+        loss = cv2.imread('./loss.png')
+        cv2.imshow('accuracy', acc)
+        cv2.imshow('loss', loss)
+
+    def inference(self):
+        # get QLineEdit content
+        num = int(self.line1.text())
+
+        # load model
+        loaded_model = LeNet5()
+        loaded_model.load_state_dict(torch.load(PATH))
+        loaded_model.cuda()
+        loaded_model.eval()
+
+        # setup test dataset
+        batch_idx, (data, labels) = next(enumerate(test_loader_all))
+        data = data.to(device)
+        
+        # run model
+        with torch.no_grad():
+            output = loaded_model(data)
+        
+        # convert to probability
+        probability = F.softmax(output.data[num], dim=0).tolist()
+        
+        # plot 
+        plt.figure(1)
+        plt.imshow(data.cpu()[num][0], cmap='gray', interpolation='none')
+
+        plt.figure(2)        
+        plt.bar(range(0, 10), probability)
+        plt.ylim(0, 1)
+        plt.xlim(0, 9)
+        plt.show()        
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
