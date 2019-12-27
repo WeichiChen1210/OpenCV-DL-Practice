@@ -3,6 +3,8 @@ from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QIcon, QPixmap, QImage
 
 from matplotlib import pyplot as plt
+import matplotlib as mpl
+mpl.use('tkAgg')
 
 import cv2
 import numpy as np
@@ -78,29 +80,54 @@ class Window(QWidget):
         plt.show()
 
     def substraction(self):
+        # read input video
         vid = cv2.VideoCapture('bgSub.mp4')
+
+        # check if it's ready to be read
         while not vid.isOpened():
             vid = cv2.VideoCapture('bgSub.mp4')
             cv2.waitKey(1000)
             print("Wait for the header")
         
+        # current frame
         pos_frame = vid.get(cv2.CAP_PROP_POS_FRAMES)
-        
+
+        # background subtractor object
+        # backSub = cv2.createBackgroundSubtractorKNN()
+        backSub = cv2.createBackgroundSubtractorMOG2(history=50, varThreshold=192, detectShadows=False)
+        # history: number of frames to be trained, varThreshold; threshold, detectShadow: detect shadow or not
+
         while(True):
+            # read a frame
             ret, frame = vid.read()
+            # if frame is ready
             if ret:
-                cv2.imshow('Origin', frame)
+                # current frame
                 pos_frame = vid.get(cv2.CAP_PROP_POS_FRAMES)
+
+                # apply subtractor
+                fgMask = backSub.apply(frame)
+                # get the frame number and write it on the current frame
+                cv2.rectangle(frame, (10, 2), (100, 2), (255, 255, 255), -1)
+                cv2.putText(frame, str(pos_frame), (15, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0))
+
+                # show in 2 windows
+                cv2.imshow('Origin', frame)
+                cv2.imshow('Mask', fgMask)
+            # if frame is not ready
             else:
                 vid.set(cv2.CAP_PROP_POS_FRAMES, pos_frame-1)
                 print("frame is not ready")
                 cv2.waitKey(1000)
 
-            if cv2.waitKey(30) & 0xFF == ord('q'):
+            if cv2.waitKey(37) & 0xFF == ord('q'):
                 break
 
+            # if the end of video, break
             if vid.get(cv2.CAP_PROP_POS_FRAMES) == vid.get(cv2.CAP_PROP_FRAME_COUNT):
+                print(vid.get(cv2.CAP_PROP_FRAME_COUNT))
                 break
+        
         vid.release()
         cv2.destroyAllWindows()
 
